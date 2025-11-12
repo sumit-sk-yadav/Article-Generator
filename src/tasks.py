@@ -7,8 +7,8 @@ def create_plan_task(planner_agent):
 
     search_tool = TavilySearchTool(
         search_depth = "advanced",
-        max_results = 15,
-        include_raw_content = True,
+        max_results = 10,
+        #include_raw_content = True,
     )
     scrape_tool = ScrapeWebsiteTool()
 
