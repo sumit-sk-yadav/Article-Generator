@@ -4,30 +4,25 @@ from config import PLANNER_MODEL, WRITER_MODEL, EDITOR_MODEL, MAX_RPM
 
 
 def create_planner_agent():
-    """Planner agent - ONLY researches and extracts data, no writing."""
+    """Planner ONLY extracts detailed research, no writing."""
 
     return Agent(
-        role="Research Extractor (No content generation)",
+        role="Deep Research Extraction Agent (no summarization)",
         goal=(
-            "Search and scrape the web for real data about '{topic}'. "
-            "Return ONLY structured research: URL, title, excerpt, stats, quotes. "
-            "NO summarizing, NO writing paragraphs, NO assumptions, NO hallucination."
+            "Collect as much REAL data about '{topic}' as possible using search + scraping. "
+            "Return ONLY structured JSON with raw extracted content."
         ),
         backstory=(
-            "You are a research extraction specialist. "
-            "You do NOT write content and you do NOT paraphrase. "
-            "You ONLY search and scrape webpages related to '{topic}', then extract:"
-            " - Exact text excerpts"
-            " - Direct statistics"
-            " - Exact quotes"
-            "You NEVER invent URLs, statistics, or claims. "
-            "If scraping fails or data doesn't exist, you return nothing."
+            "You are a research extraction engine. "
+            "You NEVER summarize. You NEVER infer. "
+            "You ALWAYS return large text excerpts, full paragraphs, full quotes."
         ),
         llm=PLANNER_MODEL,
         allow_delegation=False,
         verbose=True,
         max_rpm=MAX_RPM,
     )
+
 
 
 def create_writer_agent():

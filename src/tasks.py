@@ -3,47 +3,62 @@ from crewai import Task
 from crewai_tools import ScrapeWebsiteTool, TavilySearchTool
 
 def create_plan_task(planner_agent):
-    """Planner performs REAL research and outputs structured scraped data"""
+    """Planner researches deeply and returns detailed scraped data"""
 
-    search_tool = TavilySearchTool()
+    search_tool = TavilySearchTool(
+        search_depth = "advanced",
+        max_results = 15,
+        include_raw_content = True,
+    )
     scrape_tool = ScrapeWebsiteTool()
 
     return Task(
         description=(
-            "Your ONLY job is to collect verifiable research about: {topic}.\n"
-            "Do NOT write a narrative, do NOT outline content. Just research.\n\n"
+            "Your ONLY output will be structured research data about: {topic}.\n"
+            "You must return as MUCH data as possible — do NOT summarize, do NOT write narratives.\n\n"
 
-            "PROCESS:\n"
-            "1. Use TavilySearchTool to search for pages ONLY related to {topic}.\n"
-            "2. For each search result URL:\n"
-            "      - Scrape the page using ScrapeWebsiteTool\n"
-            "      - Extract EXACT material from the page (no paraphrasing)\n\n"
+            "STEP-BY-STEP PROCESS:\n"
+            "1) Perform MULTIPLE searches using TavilySearchTool.\n"
+            "   - Use variations of the search query.\n"
+            "   - Example: '{topic} benefits', '{topic} challenges', '{topic} examples', '{topic} statistics'.\n"
+            "   - Continue generating new queries until no new results appear.\n\n"
+
+            "2) For EVERY returned URL:\n"
+            "   - Scrape the page using ScrapeWebsiteTool.\n"
+            "   - Extract ALL of the following if available:\n"
+            "       * Page title\n"
+            "       * The full body text / large paragraphs\n"
+            "       * Lists of statistics (exact numbers only)\n"
+            "       * Quotes (must be verbatim)\n"
+            "       * Company names, report names, author, publication\n\n"
 
             "STRICT RULES:\n"
-            "- NEVER invent URLs, stats, or quotes.\n"
-            "- If scraping fails, skip the URL. Do NOT guess or hallucinate missing content.\n"
-            "- If content doesn’t mention {topic}, discard it.\n\n"
+            "- NO summarizing.\n"
+            "- NO rewriting text.\n"
+            "- NO hallucinating missing stats.\n"
+            "- If scraping fails or data doesn’t mention {topic}, SKIP IT.\n\n"
 
             "OUTPUT FORMAT (MANDATORY):\n"
-            "Return ONLY a JSON list like this:\n"
+            "Return ONLY valid JSON like this:\n"
             "[\n"
             "  {\n"
             "    'url': 'https://real-url.com/article',\n"
             "    'source': 'Harvard Business Review',\n"
             "    'title': 'Aligning AI Strategy in 2025',\n"
-            "    'excerpt': 'Exact paragraph scraped from the page... ',\n"
+            "    'content': 'Full scraped body text... (NOT summarized)',\n"
             "    'stats': ['Copied stat 1', 'Copied stat 2'],\n"
-            "    'quotes': ['Copied quote from the source']\n"
+            "    'quotes': ['Exact quote from the page'],\n"
+            "    'insights': ['Short extracted insights (copied phrases only — no interpretation)']\n"
             "  }\n"
             "]\n\n"
 
-            "IMPORTANT:\n"
-            "- Do NOT produce bullet points or narrative writing.\n"
-            "- Output MUST be valid JSON only. No commentary outside JSON."
+            "FINAL CHECK BEFORE RETURNING:\n"
+            "- Does every item contain REAL data from scraping?\n"
+            "- JSON only — no storytelling, no bullet points outside JSON.\n"
         ),
         expected_output=(
-            "JSON array with scraped research objects. "
-            "Each object includes: url, source, title, excerpt, stats, quotes."
+            "A detailed JSON array with multiple research objects containing large scraped text, "
+            "multiple stats, quotes, and deep extraction."
         ),
         tools=[search_tool, scrape_tool],
         agent=planner_agent,
@@ -66,7 +81,7 @@ def create_write_task(writer_agent, plan_task):
             "- If something is missing, skip it. Do NOT guess.\n\n"
 
             "Your output MUST:\n"
-            "- Be 2000–2500 words\n"
+            "- Be 3000–3500 words\n"
             "- Use sections (## 1. Section Title)\n"
             "- Naturally cite data from the research JSON\n"
 

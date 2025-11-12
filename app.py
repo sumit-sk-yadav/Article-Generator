@@ -211,28 +211,31 @@ with st.sidebar:
         task_info = {
             'plan': {'icon': '🔍', 'name': 'Research & Planning'},
             'write': {'icon': '✏️', 'name': 'Writing'},
-            'edit': {'icon': '📝', 'name': 'Editing'}
+            'edit': {'icon': '📝', 'name': 'Editing'},
+            'final': {'icon': '✅', 'name': 'Complete'}
         }
         
-        for task_name in ['plan', 'write', 'edit']:
+        for task_name in ['plan', 'write', 'edit', 'final']:
             if task_name in checkpoints:
                 data = checkpoints[task_name]
-                icon = task_info[task_name]['icon']
-                name = task_info[task_name]['name']
+                icon = task_info.get(task_name, {}).get('icon', '📝')
+                name = task_info.get(task_name, {}).get('name', task_name.title())
                 
                 st.success(f"{icon} **{name}** - Completed")
                 st.caption(f"Saved at {data['timestamp']}")
             else:
-                icon = task_info[task_name]['icon']
-                name = task_info[task_name]['name']
+                icon = task_info.get(task_name, {}).get('icon', '📝')
+                name = task_info.get(task_name, {}).get('name', task_name.title())
                 st.info(f"{icon} **{name}** - Pending")
     else:
         st.info("No checkpoints available for this session")
     
     if checkpoints:
         if st.button("🗑️ Clear All Checkpoints", type="secondary", use_container_width=True):
-            st.session_state.crew_manager.checkpoint_manager.clear_checkpoints()
-            st.success("Checkpoints cleared!")
+            st.session_state.crew_manager.checkpoint_manager.clear_all_checkpoints()
+            st.session_state.generated_content = None
+            st.session_state.current_topic = None
+            st.success("All checkpoints cleared!")
             st.rerun()
     
     st.divider()
@@ -248,7 +251,7 @@ if not st.session_state.api_keys_valid:
 # Topic input
 topic = st.text_input(
     "Enter Blog Topic",
-    placeholder="e.g., 'Aligning AI Strategy with Business Strategy in 2025'",
+    placeholder="e.g., 'The Future of Quantum Computing in 2025'",
     help="Enter the topic you want to write about",
     disabled=st.session_state.generation_in_progress or not st.session_state.api_keys_valid
 )
@@ -277,10 +280,10 @@ if generate_button:
     elif not st.session_state.api_keys_valid:
         st.error("⚠️ Please configure your API keys in the sidebar")
     else:
-        # ADDED: Auto-clear checkpoints if topic changed
+        # Auto-clear checkpoints if topic changed
         if st.session_state.current_topic and st.session_state.current_topic != topic:
             st.info(f"📝 Topic changed from '{st.session_state.current_topic}' to '{topic}'. Clearing old checkpoints...")
-            st.session_state.crew_manager.checkpoint_manager.clear_checkpoints()
+            st.session_state.crew_manager.checkpoint_manager.clear_checkpoints(st.session_state.current_topic)
             st.session_state.generated_content = None
         
         st.session_state.generation_in_progress = True
@@ -312,7 +315,7 @@ if generate_button:
                     provider=st.session_state.selected_provider,
                     llm_api_key=st.session_state.llm_api_key,
                     tavily_api_key=st.session_state.tavily_api_key,
-                    force_restart=force_restart  # This respects the checkbox
+                    force_restart=force_restart
                 )
                 
                 # Update progress
@@ -344,3 +347,50 @@ if generate_button:
                     st.error(f"❌ An error occurred: {error_message}")
                 
                 st.warning("💾 Your progress has been saved. You can try again or check the checkpoints in the sidebar.")
+
+# Display generated content - THIS WAS MISSING!
+if st.session_state.generated_content:
+    st.divider()
+    st.header("📄 Your Generated Article")
+    
+    # Prepare markdown content with metadata
+    formatted_content = format_markdown_with_metadata(
+        st.session_state.generated_content, 
+        st.session_state.current_topic
+    )
+    
+    # Generate filename
+    filename = generate_filename(st.session_state.current_topic)
+    
+    # Download button at the top
+    col1, col2, col3 = st.columns([1.5, 1, 3.5])
+    with col1:
+        st.download_button(
+            label="⬇️ Download Markdown",
+            data=formatted_content,
+            file_name=filename,
+            mime="text/markdown",
+            use_container_width=True,
+            help="Download the article as a .md file with metadata"
+        )
+    
+    with col2:
+        if st.button("📋 Copy Text", use_container_width=True):
+            st.toast("Use Ctrl+C to copy from the Raw Markdown tab", icon="ℹ️")
+    
+    # Tabs for different views
+    preview_tab, raw_tab = st.tabs(["📖 Preview", "📝 Raw Markdown"])
+    
+    with preview_tab:
+        st.markdown(st.session_state.generated_content)
+    
+    with raw_tab:
+        st.code(formatted_content, language="markdown")
+
+# Footer
+st.divider()
+st.markdown(f"""
+<div style='text-align: center; color: gray; padding: 2rem 0;'>
+    <small>Powered by CrewAI • {st.session_state.selected_provider.title()} • Streamlit | Built with ❤️ for Content Creators</small>
+</div>
+""", unsafe_allow_html=True)
