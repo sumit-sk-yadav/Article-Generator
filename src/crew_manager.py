@@ -1,89 +1,42 @@
-"""Crew execution logic with checkpoint support"""
-import time
+"""Crew management with multi-provider support"""
+import os
 from crewai import Crew, Process
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from litellm.exceptions import RateLimitError
+import time
+import re
 
-from src.checkpoint_manager import CheckpointManager
 from src.agents import create_planner_agent, create_writer_agent, create_editor_agent
 from src.tasks import create_plan_task, create_write_task, create_edit_task
-from config import CREW_MAX_RPM, RETRY_MULTIPLIER, RETRY_MIN_WAIT, RETRY_MAX_WAIT, RETRY_MAX_ATTEMPTS, RETRY_DELAY
+from src.checkpoint_manager import CheckpointManager
+from config import (
+    RETRY_MULTIPLIER, RETRY_MIN_WAIT, RETRY_MAX_WAIT, 
+    RETRY_MAX_ATTEMPTS, RETRY_DELAY, CREW_MAX_RPM
+)
 
 
 class CrewManager:
-    """Manages crew execution with checkpoint support"""
+    """Manages the content generation crew with multi-provider support"""
     
     def __init__(self):
         self.checkpoint_manager = CheckpointManager()
-        self.task_sequence = ['plan', 'write', 'edit']
+        self.crew = None
     
-    def _task_callback(self, task_output):
-        """
-        Callback function that runs after each task completes.
-        Saves checkpoint for the completed task.
-        """
-        task_name = task_output.name if hasattr(task_output, 'name') else "unknown"
-        output_str = str(task_output.raw) if hasattr(task_output, 'raw') else str(task_output)
-        
-        # Map task descriptions to checkpoint names
-        if "Prioritize the latest trends" in str(task_output.description):
-            checkpoint_name = 'plan'
-        elif "Use the content plan to craft" in str(task_output.description):
-            checkpoint_name = 'write'
-        elif "Proofread the given blog post" in str(task_output.description):
-            checkpoint_name = 'edit'
-        else:
-            checkpoint_name = task_name
-        
-        # Save checkpoint
-        self.checkpoint_manager.save_checkpoint(
-            checkpoint_name, 
-            output_str,
-            agent_name=task_output.agent if hasattr(task_output, 'agent') else None
-        )
-        
-        print(f"✅ Task completed and checkpointed: {checkpoint_name}")
-        return task_output
+    def get_checkpoints(self):
+        """Get all checkpoints"""
+        return self.checkpoint_manager.get_all_checkpoints()
     
-    def run_crew(self, topic, groq_api_key, tavily_api_key, force_restart=False):
-        """
-        Run crew with in-memory checkpoints (no file saving)
+    def _setup_crew(self, provider: str, llm_api_key: str, tavily_api_key: str):
+        """Set up the crew with agents and tasks"""
+        # Set API keys based on provider
+        provider_env_map = {
+            "groq": "GROQ_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "cerebras": "CEREBRAS_API_KEY"
+        }
         
-        Args:
-            topic: Blog topic
-            groq_api_key: Groq API key for LLM
-            tavily_api_key: Tavily API key for search
-            force_restart: Clear checkpoints and start fresh
-        
-        Returns:
-            str: Final article content
-        """
-        # Set API keys in environment for this execution
-        import os
-        os.environ["GROQ_API_KEY"] = groq_api_key
-        os.environ["TAVILY_API_KEY"] = tavily_api_key
-        
-        # Clear memory if force restart
-        if force_restart:
-            self.checkpoint_manager.clear_checkpoints()
-            print("🔄 Starting fresh (memory cleared)")
-        
-        # Check for existing in-memory checkpoints
-        last_completed = self.checkpoint_manager.get_last_completed_task(self.task_sequence)
-        
-        if last_completed:
-            print(f"📌 Resuming from last checkpoint: {last_completed}")
-            
-            # If all tasks complete, return final result
-            if last_completed == 'edit':
-                final_checkpoint = self.checkpoint_manager.load_checkpoint('edit')
-                result = final_checkpoint['output']
-                print("✅ All tasks already completed (from memory)")
-                return result
-            
-            # If partially complete, we'll still run the crew but checkpoints are available
-            print(f"⚠️  Note: Partial checkpoints exist. Crew will re-run but can use cached data.")
-        else:
-            print("🚀 Starting crew from beginning")
+        os.environ[provider_env_map[provider]] = llm_api_key
+        os.environ['TAVILY_API_KEY'] = tavily_api_key
         
         # Create agents
         planner = create_planner_agent()
@@ -95,49 +48,122 @@ class CrewManager:
         write_task = create_write_task(writer, plan_task)
         edit_task = create_edit_task(editor, write_task)
         
-        # Set callbacks for each task
-        plan_task.callback = self._task_callback
-        write_task.callback = self._task_callback
-        edit_task.callback = self._task_callback
-        
-        # Configure crew
-        crew = Crew(
+        # Create crew
+        self.crew = Crew(
             agents=[planner, writer, editor],
             tasks=[plan_task, write_task, edit_task],
             process=Process.sequential,
+            verbose=True,
             max_rpm=CREW_MAX_RPM,
-            verbose=True  # Enable verbose logging to see progress
         )
         
+        return plan_task, write_task, edit_task
+    
+    def _clean_output(self, text: str) -> str:
+        """Remove any thinking tags or internal monologue from output"""
+        # Remove <think>...</think> blocks
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'</?think>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        return text.strip()
+    
+    def _execute_task_with_checkpoint(self, task_name: str, agent, task_obj, context_output=None):
+        """Execute a single task and save checkpoint"""
         try:
-            print(f"🤖 Running crew for topic: {topic}")
-            result = crew.kickoff(inputs={"topic": topic})
+            print(f"\n🚀 Executing {task_name} task...")
             
-            print("✅ Crew execution completed successfully!")
-            return result
-            
-        except Exception as e:
-            print(f"❌ Error during execution: {str(e)}")
-            
-            # Show which checkpoints were saved before failure
-            saved_checkpoints = self.checkpoint_manager.get_all_checkpoints()
-            if saved_checkpoints:
-                print(f"💾 Checkpoints preserved: {list(saved_checkpoints.keys())}")
+            if context_output:
+                result = agent.execute_task(task_obj, context=context_output)
             else:
-                print("💾 No checkpoints were saved before failure")
+                result = agent.execute_task(task_obj)
             
-            raise
+            # Clean output
+            cleaned_result = self._clean_output(result)
+            
+            # Save checkpoint
+            self.checkpoint_manager.save_checkpoint(
+                task_name=task_name,
+                output=cleaned_result,
+                agent_name=agent.role
+            )
+            
+            print(f"✅ {task_name} task completed")
+            return cleaned_result
+            
+        except RateLimitError as e:
+            print(f"⏸️ Rate limit hit during {task_name} task")
+            raise e
     
     @retry(
-        wait=wait_exponential(multiplier=RETRY_MULTIPLIER, min=RETRY_MIN_WAIT, max=RETRY_MAX_WAIT),
         stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
-        retry=retry_if_exception_type((Exception,))
+        wait=wait_exponential(
+            multiplier=RETRY_MULTIPLIER,
+            min=RETRY_MIN_WAIT,
+            max=RETRY_MAX_WAIT
+        ),
+        retry=retry_if_exception_type(RateLimitError),
+        before_sleep=lambda retry_state: print(
+            f"⏳ Rate limit hit. Retrying in {retry_state.next_action.sleep} seconds... "
+            f"(Attempt {retry_state.attempt_number}/{RETRY_MAX_ATTEMPTS})"
+        )
     )
-    def run_with_retry(self, topic, groq_api_key, tavily_api_key, force_restart=False):
-        """Execute crew with retry logic"""
-        time.sleep(RETRY_DELAY)
-        return self.run_crew(topic, groq_api_key, tavily_api_key, force_restart)
+    def run_with_retry(self, topic: str, provider: str, llm_api_key: str, 
+                    tavily_api_key: str, force_restart: bool = False):
+        """Run crew with automatic retry and task-level resumption"""
+        
+        # Set the topic for checkpoint management
+        self.checkpoint_manager.set_topic(topic)
     
-    def get_checkpoints(self):
-        """Get all checkpoints for display"""
-        return self.checkpoint_manager.get_all_checkpoints()
+        if force_restart:
+            print("🔄 Force restart enabled - clearing all checkpoints")
+            self.checkpoint_manager.clear_checkpoints(topic)  # Clear only this topic's checkpoints
+    
+        
+        # Setup crew with selected provider
+        plan_task, write_task, edit_task = self._setup_crew(provider, llm_api_key, tavily_api_key)
+        planner = create_planner_agent()
+        writer = create_writer_agent()
+        editor = create_editor_agent()
+        
+        print(f"🚀 Using {provider.upper()} as LLM provider")
+        
+        try:
+            # Task 1: Planning
+            if self.checkpoint_manager.has_checkpoint('plan'):
+                print("📋 Plan task already completed - using checkpoint")
+                plan_output = self.checkpoint_manager.get_checkpoint('plan')['output']
+            else:
+                plan_output = self._execute_task_with_checkpoint('plan', planner, plan_task)
+                time.sleep(RETRY_DELAY)
+            
+            # Task 2: Writing
+            if self.checkpoint_manager.has_checkpoint('write'):
+                print("✏️ Write task already completed - using checkpoint")
+                write_output = self.checkpoint_manager.get_checkpoint('write')['output']
+            else:
+                write_output = self._execute_task_with_checkpoint('write', writer, write_task, context_output=plan_output)
+                time.sleep(RETRY_DELAY)
+            
+            # Task 3: Editing
+            if self.checkpoint_manager.has_checkpoint('edit'):
+                print("📝 Edit task already completed - using checkpoint")
+                edit_output = self.checkpoint_manager.get_checkpoint('edit')['output']
+            else:
+                edit_output = self._execute_task_with_checkpoint('edit', editor, edit_task, context_output=write_output)
+            
+            print("\n✅ All tasks completed successfully!")
+            return edit_output
+            
+        except RateLimitError as e:
+            latest = self.checkpoint_manager.get_latest_completed_task()
+            if latest:
+                print(f"\n⏸️ Execution paused due to rate limit. Progress saved up to: {latest}")
+                print("💾 Run again to resume from the last checkpoint")
+            raise e
+        except Exception as e:
+            print(f"\n❌ Error during execution: {e}")
+            latest = self.checkpoint_manager.get_latest_completed_task()
+            if latest:
+                print(f"💾 Progress saved up to: {latest}")
+            raise e

@@ -2,39 +2,30 @@
 from datetime import datetime
 
 
-def format_markdown_with_metadata(content, topic):
-    """
-    Format content with markdown metadata header (without saving to file)
+def format_markdown_with_metadata(content: str, topic: str) -> str:
+    """Format markdown content with metadata header"""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    Args:
-        content: The blog post content
-        topic: Topic name for metadata
-    
-    Returns:
-        str: Formatted markdown content with frontmatter
-    """
-    markdown_content = f"""---
-title: {topic}
-date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-generated_by: CrewAI Pipeline
+    metadata = f"""---
+title: Generated Article
+topic: {topic}
+generated: {timestamp}
+generator: AI Content Generator
 ---
 
-{content}
 """
-    return markdown_content
+    return metadata + content
 
 
-def generate_filename(topic):
-    """
-    Generate a safe filename from topic
+def generate_filename(topic: str) -> str:
+    """Generate a filename from the topic"""
+    import re
     
-    Args:
-        topic: Topic string
+    # Remove special characters and replace spaces with hyphens
+    filename = re.sub(r'[^\w\s-]', '', topic.lower())
+    filename = re.sub(r'[-\s]+', '-', filename)
     
-    Returns:
-        str: Safe filename with timestamp
-    """
-    safe_filename = "".join(c for c in topic if c.isalnum() or c in (' ', '-', '_')).strip()
-    safe_filename = safe_filename.replace(' ', '_')
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{safe_filename}_{timestamp}.md"
+    # Add timestamp to make it unique
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    return f"{filename}_{timestamp}.md"
