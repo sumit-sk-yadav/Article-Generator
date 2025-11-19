@@ -7,7 +7,6 @@ load_dotenv()
 
 # API Configuration - Support multiple providers
 DEFAULT_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-#DEFAULT_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 DEFAULT_CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 DEFAULT_TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
@@ -27,17 +26,6 @@ if SELECTED_PROVIDER == "groq":
     MAX_RPM = 3
     CREW_MAX_RPM = 5
     RETRY_DELAY = 10
-# elif SELECTED_PROVIDER == "openai":
-#     # PLANNER_MODEL = "gpt-4o"
-#     # WRITER_MODEL = "gpt-4o"
-#     # EDITOR_MODEL = "gpt-4o"
-#     # Or use cheaper option:
-#     PLANNER_MODEL = "gpt-4o-mini"
-#     WRITER_MODEL = "gpt-4o-mini"
-#     EDITOR_MODEL = "gpt-4o-mini"
-#     MAX_RPM = 10
-#     CREW_MAX_RPM = 20
-#     RETRY_DELAY = 2
 elif SELECTED_PROVIDER == "cerebras":
     # Cerebras models - ultra-fast inference
     PLANNER_MODEL = "cerebras/llama3.3-70b"
@@ -61,6 +49,5 @@ RETRY_MAX_ATTEMPTS = 5
 # Provider-specific API key mapping
 PROVIDER_API_KEYS = {
     "groq": DEFAULT_GROQ_API_KEY,
-    #"openai": DEFAULT_OPENAI_API_KEY,
     "cerebras": DEFAULT_CEREBRAS_API_KEY,
 }
