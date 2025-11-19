@@ -31,7 +31,6 @@ class CrewManager:
         # Set API keys based on provider
         provider_env_map = {
             "groq": "GROQ_API_KEY",
-            "openai": "OPENAI_API_KEY",
             "cerebras": "CEREBRAS_API_KEY"
         }
         

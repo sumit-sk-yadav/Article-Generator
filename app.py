@@ -105,7 +105,6 @@ with st.sidebar:
         provider_options = {
             "cerebras": "🚀 Cerebras (Ultra-fast - 2200+ tok/s)",
             "groq": "⚡ Groq (Fast - Free tier)",
-            "openai": "🤖 OpenAI (GPT-4o)"
         }
         
         selected_provider = st.selectbox(
@@ -127,7 +126,6 @@ with st.sidebar:
         
         Get API keys:
         - **Groq**: [console.groq.com](https://console.groq.com)
-        - **OpenAI**: [platform.openai.com](https://platform.openai.com/api-keys)
         - **Cerebras**: [cloud.cerebras.ai](https://cloud.cerebras.ai)
         - **Tavily**: [tavily.com](https://app.tavily.com)
         """)
@@ -135,7 +133,6 @@ with st.sidebar:
         # LLM API Key input
         llm_key_placeholder = {
             "groq": "gsk_...",
-            "openai": "sk-proj-...",
             "cerebras": "csk-..."
         }
         
