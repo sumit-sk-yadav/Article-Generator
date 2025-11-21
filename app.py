@@ -7,6 +7,68 @@ from config import (
     PROVIDER_API_KEYS, 
     DEFAULT_TAVILY_API_KEY
 )
+import markdown2
+import pdfkit
+from io import BytesIO
+
+def convert_markdown_to_pdf(markdown_content, topic):
+    """Convert markdown content to PDF"""
+    try:
+        # Convert markdown to HTML
+        html = markdown2.markdown(markdown_content, extras=['tables', 'fenced-code-blocks'])
+        
+        # Add some basic styling
+        styled_html = f"""
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    line-height: 1.6;
+                    padding: 40px;
+                    max-width: 800px;
+                    margin: 0 auto;
+                }}
+                h1, h2, h3 {{ color: #333; }}
+                code {{
+                    background-color: #f4f4f4;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                }}
+                pre {{
+                    background-color: #f4f4f4;
+                    padding: 10px;
+                    border-radius: 5px;
+                    overflow-x: auto;
+                }}
+            </style>
+        </head>
+        <body>
+            {html}
+        </body>
+        </html>
+        """
+        
+        # Configure pdfkit options
+        options = {
+            'page-size': 'A4',
+            'margin-top': '20mm',
+            'margin-right': '20mm',
+            'margin-bottom': '20mm',
+            'margin-left': '20mm',
+            'encoding': "UTF-8",
+            'no-outline': None,
+            'enable-local-file-access': None
+        }
+        
+        # Convert to PDF
+        pdf_bytes = pdfkit.from_string(styled_html, False, options=options)
+        return pdf_bytes
+        
+    except Exception as e:
+        st.error(f"Error converting to PDF: {str(e)}")
+        return None
 
 
 def display_checkpoint_progress(crew_manager):
@@ -345,7 +407,7 @@ if generate_button:
                 
                 st.warning("💾 Your progress has been saved. You can try again or check the checkpoints in the sidebar.")
 
-# Display generated content - THIS WAS MISSING!
+# Display generated content 
 if st.session_state.generated_content:
     st.divider()
     st.header("📄 Your Generated Article")
@@ -359,8 +421,8 @@ if st.session_state.generated_content:
     # Generate filename
     filename = generate_filename(st.session_state.current_topic)
     
-    # Download button at the top
-    col1, col2, col3 = st.columns([1.5, 1, 3.5])
+    # Download buttons at the top
+    col1, col2, col3 = st.columns([1.5, 1.5, 3])
     with col1:
         st.download_button(
             label="⬇️ Download Markdown",
@@ -370,11 +432,24 @@ if st.session_state.generated_content:
             use_container_width=True,
             help="Download the article as a .md file with metadata"
         )
-    
+
     with col2:
-        if st.button("📋 Copy Text", use_container_width=True):
-            st.toast("Use Ctrl+C to copy from the Raw Markdown tab", icon="ℹ️")
-    
+        # Generate PDF
+        pdf_filename = filename.replace('.md', '.pdf')
+        pdf_data = convert_markdown_to_pdf(st.session_state.generated_content, st.session_state.current_topic)
+        
+        if pdf_data:
+            st.download_button(
+                label="📄 Download PDF",
+                data=pdf_data,
+                file_name=pdf_filename,
+                mime="application/pdf",
+                use_container_width=True,
+                help="Download the article as a PDF file"
+            )
+        else:
+            st.button("📄 Download PDF", disabled=True, use_container_width=True)
+
     # Tabs for different views
     preview_tab, raw_tab = st.tabs(["📖 Preview", "📝 Raw Markdown"])
     
